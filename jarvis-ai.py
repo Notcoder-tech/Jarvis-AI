@@ -8,35 +8,39 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 genai.configure(api_key=GEMINI_API_KEY)
+print(genai.list_models())
 
 # Main Gemini Chat Function
 def ask_gemini(prompt):
     try:
-        model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(prompt)
+        chat = gemini_model.start_chat(history=[])
+        response = chat.send_message(prompt)
         return response.text
     except Exception as e:
-        print(f"[Gemini Error] {e}")
+        print(f"[Gemini Error] {str(e)}")
         return None
 
+
 # Fallback using OpenRouter (uses GPT-3.5 / Mixtral / Claude)
-def ask_openrouter(prompt, model="mistralai/mixtral-8x7b"):
+def ask_openrouter(prompt):
     try:
+        url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json"
         }
         data = {
-            "model": model,
+            "model": "openrouter/meta-llama/llama-2-70b-chat",  # more intelligent
             "messages": [
-                {"role": "system", "content": "You are JARVIS, an advanced AI assistant."},
+                {"role": "system", "content": "You are JARVIS, an advanced AI assistant. Be smart, helpful, and accurate."},
                 {"role": "user", "content": prompt}
             ]
         }
-        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data)
+        response = requests.post(url, headers=headers, json=data)
         return response.json()["choices"][0]["message"]["content"]
     except Exception as e:
         return f"[OpenRouter Error] {str(e)}"
+
 
 # JARVIS Handler
 def ask_jarvis(prompt):
