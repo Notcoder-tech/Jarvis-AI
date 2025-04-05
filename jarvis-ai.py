@@ -1,63 +1,87 @@
-import os 
-import google.generativeai as genai
+import os
+import time
 import requests
 from dotenv import load_dotenv
+import google.generativeai as genai
+import openai
 
+# Load environment variables
 load_dotenv()
+
+# --- API Keys ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 
-genai.configure(api_key=GEMINI_API_KEY)
-print(genai.list_models())
+# --- Configure Gemini ---
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
-# Main Gemini Chat Function
+# --- Configure OpenRouter ---
+openai.api_key = OPENROUTER_API_KEY
+openai.base_url = "https://openrouter.ai/api/v1"
+
+# --- Weather API Logic ---
+def get_weather(city):
+    try:
+        url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric"
+        res = requests.get(url).json()
+
+        if res["cod"] != 200:
+            return f"Couldn't find weather for '{city}'."
+
+        temp = res["main"]["temp"]
+        description = res["weather"][0]["description"]
+        return f"The weather in {city} is {description} with a temperature of {temp}°C."
+    except Exception as e:
+        return f"Weather error: {str(e)}"
+
+# --- Ask Gemini (Primary AI) ---
 def ask_gemini(prompt):
     try:
-        chat = gemini_model.start_chat(history=[])
-        response = chat.send_message(prompt)
+        model = genai.GenerativeModel('gemini-pro')
+        response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        print(f"[Gemini Error] {str(e)}")
-        return None
+        return f"GEMINI_ERROR: {str(e)}"
 
-
-# Fallback using OpenRouter (uses GPT-3.5 / Mixtral / Claude)
+# --- Ask OpenRouter (Fallback AI) ---
 def ask_openrouter(prompt):
     try:
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "model": "openrouter/meta-llama/llama-2-70b-chat",  # more intelligent
-            "messages": [
-                {"role": "system", "content": "You are JARVIS, an advanced AI assistant. Be smart, helpful, and accurate."},
+        response = openai.ChatCompletion.create(
+            model="mistral/mistral-7b-instruct",
+            messages=[
+                {"role": "system", "content": "You are JARVIS, an advanced AI assistant."},
                 {"role": "user", "content": prompt}
             ]
-        }
-        response = requests.post(url, headers=headers, json=data)
-        return response.json()["choices"][0]["message"]["content"]
+        )
+        return response["choices"][0]["message"]["content"]
     except Exception as e:
-        return f"[OpenRouter Error] {str(e)}"
+        return f"OPENROUTER_ERROR: {str(e)}"
 
+# --- JARVIS Main Loop ---
+while True:
+    user_input = input("You: ").strip()
 
-# JARVIS Handler
-def ask_jarvis(prompt):
-    gemini_reply = ask_gemini(prompt)
-    if gemini_reply:
-        return gemini_reply.strip()
-    else:
-        print("[JARVIS] Switching to backup model (OpenRouter)...")
-        return ask_openrouter(prompt).strip()
+    if user_input.lower() == "exit":
+        print("JARVIS: Shutting down, sir.")
+        break
 
-# Command Loop
-if __name__ == "__main__":
-    print("JARVIS: Online and ready, sir.")
-    while True:
-        user_input = input("You: ")
-        if user_input.lower() in ["exit", "quit"]:
-            print("JARVIS: Powering down, sir.")
-            break
-        response = ask_jarvis(user_input)
+    if "weather" in user_input.lower():
+        words = user_input.split()
+        city = "your city"
+        for i, word in enumerate(words):
+            if word.lower() == "in" and i + 1 < len(words):
+                city = words[i + 1]
+                break
+        response = get_weather(city)
         print(f"JARVIS: {response}")
+        continue
+
+    # First try Gemini
+    reply = ask_gemini(user_input)
+    if reply.startswith("GEMINI_ERROR"):
+        print("JARVIS: Gemini failed, trying backup...")
+        reply = ask_openrouter(user_input)
+
+    print(f"JARVIS: {reply}")
